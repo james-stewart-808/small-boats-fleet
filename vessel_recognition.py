@@ -16,7 +16,7 @@ from sklearn.model_selection import train_test_split
 from keras.callbacks import EarlyStopping
 
 
-# Hello, this is a final attempt to push vessel recogition to the training_set branch
+# Hello, this should provide merge ability between training_set and main
 
 def load_data():
     """
