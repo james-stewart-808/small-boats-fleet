@@ -2,15 +2,12 @@
 __main__.py
 
 The main executable file to used in the processing of all files related to the
-maritime_decarbonisation repository.
+small-boats-fleet repository.
 
 
-Databases used in the study include..
+Research used in the study
 
-        static vessel information           Ray et al (2017)
-        dynamic vessel AIS dataset          Ray et al (2017)
-        oceanic condition data              Boudiere et al (2013)
-
+        ...                                 ... (...)
 
 A full description of the research and references used can be found in README.md
 
@@ -19,24 +16,36 @@ A full description of the research and references used can be found in README.md
 
 ### Import libraries and data processing files ###
 
-import sys
+import sys, os
 import math
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+import datetime
+import importlib
 
-import data_cleaning
-import weather_merge
-import ETR_scenarios
+# Using OpenCV for image analysis
+import cv2
+from sklearn import preprocessing
+from sklearn.cluster import AgglomerativeClustering
+from scipy import ndimage
+
+# import other scripts
+from detection import segmentation, detection
+from discrimination import discrimination
+from classification import classification
 
 
-### Function execution ###
-
-def load_data():
+def usage_check():
     """
-    Check terminal call usage and load dataset into pandas dataframe.
+    Check terminal call usage and load dataset into pandas dataframe. Entry
+    should include directory with trainging data...
 
-    No inputs.
+    python3 __main__.py data/Training_NSul
+
+    Inputs:
+
+            tr_dir      directory to training set.
 
     Outputs:
 
@@ -44,92 +53,136 @@ def load_data():
 
     """
 
-    if len(sys.argv) != 3:
-        print("Usage: python3 exe.py nari_static.csv nari_dynamic.csv")
+    if len(sys.argv) != 2:
+        print("Usage: python3 __main__.py data/Training_NSul")
         sys.exit(1)
 
     else:
-        static_filename = sys.argv[1]
-        dynamic_filename = sys.argv[2]
+        print("Correct usage")
+        data_dir = sys.argv[1]
+        print(data_dir)
 
-    # Read dataset into pandas dataframe and print head of dataframe
-    static_df = pd.read_csv(static_filename)
-    dynamic_df = pd.read_csv(dynamic_filename)
-
-    return static_df, dynamic_df
+    return data_dir
 
 
 
-def data_cleaning():
+
+def data_import(file_path):
     """
-    Run cleaning processes found in data_cleaning.py
+    Import folder of data images using command line argument data_dir.
 
     Input:
 
-
-
-    Output:
-
-
-    """
-
-
-    return 0
-
-
-
-
-def data_merging():
-    """
-    Run merging found in data_merging.py
-
-    Input:
-
-
+        data_dir            terminal argument representing image data directory
 
     Output:
 
+        image               image array?
 
     """
 
+    # Import image
+    image = cv2.imread(file_path, 1)
 
-    return 0
+    return image
 
-
-
-
-def ETR_scenarios():
-    """
-    Train the extra trees regressor and generate scenarios based on climatic
-    forecasts (references in README.md). Code available in ETR_scenarios.py
-
-    Input:
-
-
-
-    Output:
-
-
-    """
-
-
-    return 0
 
 
 
 if __name__ == '__main__':
+    """
+    Execution file.
 
-    # print data and show that
-    static_df, dynamic_df = load_data()
+    For each image in the directory, extract candidate slices and send them to
+    discrimination.py to obtain feature values.
+
+    Use candidate characteristics to classify candidate slices into fishing
+    vessel or not.
+
+    """
+
+    # check bash usage
+    print("0. starting usage check")
+    data_dir = usage_check()
+    print("finished usage check")
 
 
-    # data cleaning step
-    data_cleaning(static_df, dynamic_df)
+    # get list of images in directory
+    image_list = os.listdir(data_dir)
+    #image_list = ["NSul_Makawidei_1.48_125.24.png"]
+    image_list.remove('.DS_Store')
+    print(image_list)
 
 
-    # data data_merging
-    data_merging()
+    # define pandas dataframe for results
+    print("creating results dataframe")
+    cols = ['filename', 'cand_no', 'cand_row', 'cand_col', 'length', 'breadth', 'area', 'lb_ratio', 'small_vessel']
+    results_df = pd.DataFrame(columns=cols)
 
 
-    # ETR_scenarios
-    ETR_scenarios()
+    # loop through training images
+    print("starting execution for loop")
+    for filename in image_list:
+
+        # print filename
+        print(filename)
+
+        # define image results directory to save plots in
+        im_dir = r'results/run_plots/' + filename + '/'
+        if not os.path.exists(im_dir):
+            os.makedirs(im_dir)
+
+        # import image
+        print("0. starting data import")
+        file_path = data_dir + '/' + filename
+        image = data_import(file_path)
+        print("finished data import")
+
+        # save fig
+        plt.imsave(im_dir + "0.0 original image.png", image)
+
+        # detection stage
+        print("1. starting image segmentation")
+        image_segmented = segmentation(image, im_dir)
+        print("finished image segmentation")
+
+        print("2. starting image detection")
+        cand_img_arr, passed_centroids = detection(file_path, image_segmented, im_dir)
+        print(passed_centroids)
+        print("finished image detection")
+
+        if passed_centroids[0][0] == 1:
+            row_df = pd.DataFrame([[filename, "none found", None, None, None, None, None, None, None]])
+            row_df.columns = cols
+            results_df = pd.concat([results_df, row_df], ignore_index=False)
+
+            continue
+
+
+        # discrimination & classification stages
+        print("starting candidate for loop")
+        for img_index in range(cand_img_arr.shape[0]):
+
+            # define image results directory to save plots in
+            im_cand_dir = r'results/run_plots/' + filename + '/' + str(img_index + 1) + '/'
+            if not os.path.exists(im_cand_dir):
+                os.makedirs(im_cand_dir)
+
+            print("3. starting candidate discrimination")
+            length, breadth, area, lb_ratio = discrimination(cand_img_arr[img_index].astype('float32'), im_cand_dir)
+            print("finished candidate discrimination")
+
+            print("4. starting candidate classification")
+            small_vessel = classification(length, breadth, area, lb_ratio, im_dir)
+            print("finished candidate classification")
+
+            print("starting results compilation")
+            row_df = pd.DataFrame([[filename, img_index, passed_centroids[img_index][0], passed_centroids[img_index][1], length, breadth, area, lb_ratio, small_vessel]])
+            row_df.columns = cols
+            results_df = pd.concat([results_df, row_df], ignore_index=False)
+            print("finished results compilation")
+
+
+    print("printing results to csv")
+    now = datetime.datetime.now().strftime("%m.%d.%Y %H-%M-%S")
+    results_df.to_csv("/Users/apple/repos/dissEnv/results/"+now+".csv")
