@@ -7,7 +7,19 @@ vessel candidates from this.
 A full description of the research and references used can be found in README.md
 
 """
+import sys, os
+import math
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import datetime
+import importlib
 
+# Using OpenCV for image analysis
+import cv2
+from sklearn import preprocessing
+from sklearn.cluster import AgglomerativeClustering
+from scipy import ndimage
 
 def segmentation(image, im_dir):
     """
@@ -86,7 +98,7 @@ def detection(file_path, image_segmented, im_dir):
 
     # perform simple binary threshold (= 80)
     print("2.2 binary threshold of segmented image")
-    ret_seg_blur, th_seg_blur = cv2.threshold(im_seg_blur_bw, 80, 255, cv2.THRESH_BINARY)
+    ret_seg_blur, th_seg_blur = cv2.threshold(im_seg_blur_bw, 80, 255, cv2.THRESH_BINARY) # + Otsu? (like CA.py)
 
     # save fig
     plt.imsave(im_dir + "2.1 segmentation greyscaling and thresholding.png", th_seg_blur)
@@ -143,10 +155,6 @@ def detection(file_path, image_segmented, im_dir):
         cent_row = int(round(np.average(row_cent)))
         cent_col = int(round(np.average(col_cent)))
 
-        if (cent_row < 30 or cent_row > 219 or cent_col < 30 or cent_col > 469):
-
-            return None, [[1, 1]]
-
         # otherwise, add centroid to the database
         centroids[cluster][0] = int(round(np.average(row_cent)))
         centroids[cluster][1] = int(round(np.average(col_cent)))
@@ -160,27 +168,41 @@ def detection(file_path, image_segmented, im_dir):
 
     # make a numpy object of candidate 60px x 60px x 3 images
     print("2.7 generate candidate matrix object")
-    cand_img_arr = np.ndarray([no_clusters, 60, 60, 3])
+    cand_img_arr = np.ndarray([no_clusters, 260, 260, 3])
+
+
+    # define box size from candidate size
+    box_size = 260
+    box_size_half = int(box_size / 2)
 
 
     # re-import original image to two variables to avoid overwriting
     print("2.8 add candidate boxes to original image")
-    full_image = cv2.imread(file_path, 1) ### can be global?
+    full_image = cv2.imread(file_path, 1) ### zero pad?
+    full_image_borders = cv2.copyMakeBorder(full_image, box_size_half, box_size_half, box_size_half, box_size_half, borderType=cv2.BORDER_CONSTANT)
     new_image = cv2.imread(file_path, 1) ### filename
+
 
     for centroid in range(len(centroids)):
 
         # define box positions
-        x1 = centroids[centroid][1] - 30
-        x2 = centroids[centroid][1] + 30
-        y1 = centroids[centroid][0] + 30
-        y2 = centroids[centroid][0] - 30
+        x1 = centroids[centroid][1] - box_size_half + box_size_half
+        x2 = centroids[centroid][1] + box_size_half + box_size_half
+        y1 = centroids[centroid][0] + box_size_half + box_size_half
+        y2 = centroids[centroid][0] - box_size_half + box_size_half
 
         # append candidate image to cand_img_arr
-        cand_img_arr[centroid] = full_image[y2:y1, x1:x2]
+        for row in range(y2, y1):
+            for col in range(x1, x2):
+                cand_img_arr[centroid][row - y1][col - x2] = full_image_borders[row, col]
+
+        #print(cand_img_arr[0].shape)
+        #print(full_image[y2:y1, x1:x2].shape)
+
+        # cand_img_arr[centroid] = full_image[y2:y1, x1:x2]
 
         # annotate original image with detection box for this centroid
-        image_with_boxes = cv2.rectangle(new_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        image_with_boxes = cv2.rectangle(new_image, (x1 - box_size_half, y2 - box_size_half), (x2 - box_size_half, y1 - box_size_half), (255, 0, 0), 2)
 
     # save annotated image
     plt.imsave(im_dir + "2.8 candidate identification with boxes.png", image_with_boxes)
