@@ -19,6 +19,7 @@ time.
 A full description of the research and references used can be found in README.md
 
 """
+
 import sys, os
 import math
 import matplotlib.pyplot as plt
@@ -33,11 +34,12 @@ from sklearn import preprocessing
 from sklearn.cluster import AgglomerativeClustering
 from scipy import ndimage
 
+
 def candidate_analysis(cand_img, im_cand_dir):
     """
     Input:
 
-        cand_img            candidate image matrix, 60x60x3
+        cand_img            candidate image matrix, 260x260x3
         im_cand_dir         candidate image directory
 
     Output:
@@ -54,7 +56,11 @@ def candidate_analysis(cand_img, im_cand_dir):
     cand_img_bw = cv2.cvtColor(cand_img, cv2.COLOR_BGR2GRAY).astype(np.uint8)
     cand_img_bw_blur_1 = cv2.GaussianBlur(cand_img_bw, (5,5), 0)
     cand_img_bw_blur_2 = cv2.GaussianBlur(cand_img_bw_blur_1, (5,5), 0)
-    th_cand_img = cv2.threshold(cand_img_bw_blur_2, 80, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+
+    # simple binary threshold
+    mean_intensity = int(np.average(cand_img_bw))
+    thresh_value = 200 - 0.9 * mean_intensity
+    th_cand_img = cv2.threshold(cand_img_bw_blur_2, thresh_value, 255, cv2.THRESH_BINARY)[1] # + cv2.THRESH_OTSU)[1]
 
     # save annotated image
     plt.imsave(im_cand_dir + "3.1 greyscaling and thresholding of candidate.png", th_cand_img)
@@ -70,7 +76,7 @@ def candidate_analysis(cand_img, im_cand_dir):
                 col_cent.append(col)
 
 
-    # get spectral features 
+    # get spectral features
     print("3.3 Get spectral features of candidate")
     spec_r, spec_g, spec_b = [], [], []
     for row in range(th_cand_img.shape[0]):
@@ -136,4 +142,4 @@ def candidate_analysis(cand_img, im_cand_dir):
     area = len(rotated_df)
     lb_ratio = length / breadth
 
-    return length, breadth, area, lb_ratio, np.average(np.array(spec_r)), np.average(np.array(spec_g)), np.average(np.array(spec_b))
+    return round(0.1*length, 2), round(0.1*breadth, 2), round(0.01*area, 2), round(lb_ratio, 2), np.average(np.array(spec_r)), np.average(np.array(spec_g)), np.average(np.array(spec_b))

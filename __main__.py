@@ -174,22 +174,26 @@ if __name__ == '__main__':
                 os.makedirs(im_cand_dir)
 
             print("3. starting candidate analysis")
-            length, breadth, area, lb_ratio, r_ave, g_ave, b_ave = candidate_analysis(cand_img_arr[img_index].astype('float32'), im_cand_dir)
+            # Account for unknown CV2 error
+            try:
+                length, breadth, area, lb_ratio, r_ave, g_ave, b_ave = candidate_analysis(cand_img_arr[img_index].astype('float32'), im_cand_dir)
+            except:
+                continue
             print("finished candidate analysis")
 
             print("4. starting candidate discrimination")
             small_vessel = discrimination(length, breadth, area, lb_ratio, im_dir)
             print("finished candidate discrimination")
 
-            #print("5. starting candidate classification")
+            print("5. starting candidate classification")
             #if small_vessel == True:
-                #classification = classification(length, breadth, area, lb_ratio, im_dir)
+            #    classification = classification(length, breadth, area, lb_ratio, im_dir)
             #else:
             classification = "N/A"
-            #print("finished candidate classification")
+            print("finished candidate classification")
 
             print("starting results compilation")
-            row_df = pd.DataFrame([[filename, img_index + 1, passed_centroids[img_index][0], passed_centroids[img_index][1], round(0.1*length, 2), round(0.1*breadth, 2), round(0.01*area, 2), round(lb_ratio, 2), int(r_ave), int(g_ave), int(b_ave), small_vessel, classification]])
+            row_df = pd.DataFrame([[filename, img_index + 1, passed_centroids[img_index][0], passed_centroids[img_index][1], length, breadth, area, lb_ratio, int(r_ave), int(g_ave), int(b_ave), small_vessel, classification]])
             row_df.columns = cols
             results_df = pd.concat([results_df, row_df], ignore_index=False)
             print("finished results compilation")
