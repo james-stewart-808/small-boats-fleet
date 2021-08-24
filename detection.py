@@ -96,9 +96,19 @@ def detection(file_path, image_segmented, im_dir):
     im_seg_blur_bw = cv2.cvtColor(im_seg_blur, cv2.COLOR_BGR2GRAY)
 
 
-    # perform simple binary threshold (= 80)
+    # simple binary threshold
     print("2.2 binary threshold of segmented image")
-    ret_seg_blur, th_seg_blur = cv2.threshold(im_seg_blur_bw, 80, 255, cv2.THRESH_BINARY) # + Otsu? (like CA.py)
+    mean_intensity = int(np.average(im_seg_blur_bw))
+    #if mean_intensity < 40:
+    #    thresh_value = 60
+    #elif mean_intensity > 100:
+    #    thresh_value = 150
+    #else:
+    #    thresh_value = mean_intensity * 1.5
+
+    thresh_value = 200 - (mean_intensity * 0.9)
+
+    ret_seg_blur, th_seg_blur = cv2.threshold(im_seg_blur_bw, thresh_value, 255, cv2.THRESH_BINARY) # + Otsu? (like CA.py)
 
     # save fig
     plt.imsave(im_dir + "2.1 segmentation greyscaling and thresholding.png", th_seg_blur)
@@ -129,8 +139,11 @@ def detection(file_path, image_segmented, im_dir):
                 detection_counter += 1
 
 
-    # if no detections found, exit funtion
+    # if no detections found or positive pixels exceed 10% of image, exit funtion
     if len(detections) == 0:
+        return None, [[1, 1]]
+
+    if len(detections) > (image_segmented.shape[0] * image_segmented.shape[1] / 10):
         return None, [[1, 1]]
 
 
@@ -195,11 +208,6 @@ def detection(file_path, image_segmented, im_dir):
         for row in range(y2, y1):
             for col in range(x1, x2):
                 cand_img_arr[centroid][row - y1][col - x2] = full_image_borders[row, col]
-
-        #print(cand_img_arr[0].shape)
-        #print(full_image[y2:y1, x1:x2].shape)
-
-        # cand_img_arr[centroid] = full_image[y2:y1, x1:x2]
 
         # annotate original image with detection box for this centroid
         image_with_boxes = cv2.rectangle(new_image, (x1 - box_size_half, y2 - box_size_half), (x2 - box_size_half, y1 - box_size_half), (255, 0, 0), 2)

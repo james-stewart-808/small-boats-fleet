@@ -4,7 +4,7 @@ discrimination.py
 Use vessel candidate features to decide whether candidate is a small
 vessel or not.
 
-Based on total shape and spectral features. 
+Based on total shape and spectral features.
 
 From research?
 
@@ -42,6 +42,12 @@ def discrimination(length, breadth, area, lb_ratio, im_dir):
 
     """
 
-    small_vessel = True
+    # is vessel below 25 meters?
+    print("length: " + str(length))
+    if length < 25.0:
+        small_vessel = True
+
+    else:
+        small_vessel = False
 
     return small_vessel
