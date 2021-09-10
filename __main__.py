@@ -29,10 +29,16 @@ from sklearn import preprocessing
 from sklearn.cluster import AgglomerativeClustering
 from scipy import ndimage
 
+import pywt
+import pywt.data
+
 # import other scripts
-from detection import segmentation, detection
-from candidate_analysis import candidate_analysis
-from discrimination import discrimination
+from contrast import contrast
+from canny_edge import canny_edge
+from detection_analysis import detection_analysis
+from component_analysis import component_analysis
+from wavelet_transform import wavelet_transform
+from candidate_statistics import candidate_statistics
 
 
 def usage_check():
@@ -52,17 +58,16 @@ def usage_check():
 
     """
 
-    if len(sys.argv) != 3:
-        print("Usage: python3 __main__.py data/Training_NSul True")
+    if len(sys.argv) != 2:
+        print("Usage: python3 __main__.py data/Training_NSul")
         sys.exit(1)
 
     else:
         print("Correct usage")
         data_dir = sys.argv[1]
-        seg_on = sys.argv[2]
         print(data_dir)
 
-    return data_dir, seg_on
+    return data_dir
 
 
 
@@ -87,8 +92,6 @@ def data_import(file_path):
     return image
 
 
-
-
 if __name__ == '__main__':
     """
     Execution file.
@@ -103,21 +106,22 @@ if __name__ == '__main__':
 
     # check bash usage
     print("0. starting usage check")
-    data_dir, seg_on = usage_check()
+    data_dir = usage_check()
     print("finished usage check")
 
 
     # get list of images in directory
     image_list = os.listdir(data_dir)
-    #image_list = ["NSul_Makawidei_1.48_125.24.png"]
     if '.DS_Store' in image_list:
         image_list.remove('.DS_Store')
+    image_list.sort()
     print(image_list)
+
 
 
     # define pandas dataframe for results
     print("creating results dataframe")
-    cols = ['filename', 'cand_no', 'cand_row', 'cand_col', 'length', 'breadth', 'area', 'lb_ratio', 'red', 'green', 'blue', 'small_vessel', 'classification']
+    cols = ['filename', 'cand_no', 'cent_x', 'cent_y', 'WT_coeff', 'width', 'height', 'area', 'max', 'sigma', 'skew', 'entropy', 'ave_R', 'ave_G', 'ave_B']
     results_df = pd.DataFrame(columns=cols)
 
 
@@ -133,67 +137,69 @@ if __name__ == '__main__':
         if not os.path.exists(im_dir):
             os.makedirs(im_dir)
 
-        # import image
+        # 0. import image
         print("0. starting data import")
         file_path = data_dir + '/' + filename
-        image = data_import(file_path)
+        im = data_import(file_path)
         print("finished data import")
 
         # save fig
-        plt.imsave(im_dir + "0.0 original image.png", image)
+        plt.imsave(im_dir + "0. Original image.png", im)
 
-        # detection stage
-        if seg_on == True:
-            print("1. starting image segmentation")
-            image_segmented = segmentation(image, im_dir)
-            print("finished image segmentation")
+        # 1. contrast stage
+        print("1. starting image contrast enhancement")
+        im_cont = contrast(im, im_dir)
+        print("1. finished image contrast enhancement")
+
+
+        # 2. edge detection
+        print("2. starting edge detection")
+        im_edge = canny_edge(im_cont, im_dir)
+        print("2. finished edge detection")
+
+
+        # 3. get details of components found in edge detection & plot graph
+        print("3. starting edge detection analysis and plotting")
+        labels, stats, centroids = detection_analysis(im, im_edge, im_dir)
+        print("3. finished component analysis")
+
+
+        # 4. wavelet_transform
+        print("4. starting wavelet transform")
+        LL, (LH, HL, HH) = wavelet_transform(im_cont, im_dir)
+        print("4. finished wavelet transform")
+
+
+        # 5. compiling features for x candidates
+        # set up candidate image directory
+        print("5.1 set up candidate image directory if not already existing")
+        cand_im_dir = im_dir + "5. Component images/"
+        if not os.path.exists(cand_im_dir):
+            os.makedirs(cand_im_dir)
 
         else:
-            image_segmented = image
+            pass
 
 
-        print("2. starting image detection")
-        cand_img_arr, passed_centroids = detection(file_path, image_segmented, im_dir)
-        print("finished image detection")
+        # run through candidates and extract their features.
+        print("5.2 compiling features for " + str(len(centroids)) + " candidates")
 
-        if passed_centroids[0][0] == 1:
-            row_df = pd.DataFrame([[filename, "none found", None, None, None, None, None, None, None, None, None, None, None]])
-            row_df.columns = cols
-            results_df = pd.concat([results_df, row_df], ignore_index=False)
+        for comp_idx in range(1, len(centroids)):
 
-            continue
+            # Component analysis
+            print("5.2." + str(comp_idx) + " Analysing Component")
+            centroid, width, height, area, max, sigma, skew, entropy, ave_R, ave_G, ave_B, include  = candidate_statistics(im, comp_idx, cand_im_dir, labels, stats, centroids)
 
-
-        # candidate_analysis & discrimination stages
-        print("starting candidate for loop")
-        for img_index in range(cand_img_arr.shape[0]):
-
-            # define image results directory to save plots in
-            im_cand_dir = r'results/run_plots/' + filename + '/' + str(img_index + 1) + '/'
-            if not os.path.exists(im_cand_dir):
-                os.makedirs(im_cand_dir)
-
-            print("3. starting candidate analysis")
-            # Account for unknown CV2 error
-            try:
-                length, breadth, area, lb_ratio, r_ave, g_ave, b_ave = candidate_analysis(cand_img_arr[img_index].astype('float32'), im_cand_dir)
-            except:
+            # dont' include if component is too big or small to be a small vessel
+            if include == False:
                 continue
-            print("finished candidate analysis")
 
-            print("4. starting candidate discrimination")
-            small_vessel = discrimination(length, breadth, area, lb_ratio, im_dir)
-            print("finished candidate discrimination")
+            # reference wavelet transform coefficient
+            LL_coeff = LL[int(centroids[comp_idx][1] / 2), int(centroids[comp_idx][0] / 2)]
 
-            print("5. starting candidate classification")
-            #if small_vessel == True:
-            #    classification = classification(length, breadth, area, lb_ratio, im_dir)
-            #else:
-            classification = "N/A"
-            print("finished candidate classification")
 
             print("starting results compilation")
-            row_df = pd.DataFrame([[filename, img_index + 1, passed_centroids[img_index][0], passed_centroids[img_index][1], length, breadth, area, lb_ratio, int(r_ave), int(g_ave), int(b_ave), small_vessel, classification]])
+            row_df = pd.DataFrame([[filename, comp_idx + 1, centroid[0], centroid[1], int(LL_coeff), width, height, area, max, np.round(sigma[0][0], 1), np.round(skew, 2), np.round(entropy, 2), int(ave_R), int(ave_G), int(ave_B)]])
             row_df.columns = cols
             results_df = pd.concat([results_df, row_df], ignore_index=False)
             print("finished results compilation")
@@ -201,5 +207,6 @@ if __name__ == '__main__':
 
     print("printing results to csv")
     now = datetime.datetime.now().strftime("%m.%d.%Y %H-%M-%S")
-    results_df_alph = results_df.sort_values(by=['filename'], ascending = False)
-    results_df_alph.to_csv("/Users/apple/repos/dissEnv/results/"+now+".csv")
+
+    results_df_alph = results_df.sort_values(by=['cand_no'], ascending = True)
+    results_df_alph.to_csv("/Users/apple/repos/dissEnv/results/"+now+".csv", index=False)
